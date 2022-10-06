@@ -62,6 +62,12 @@ class MOTDataset(Dataset):
         annotations = self.coco.loadAnns(anno_ids)
         objs = []
         for obj in annotations:
+            ### Modified
+            if len(obj['bbox']) == 0:
+                objs.append(obj)
+                obj["clean_bbox"] = [0,0,0,0]
+                continue
+            ###
             x1 = obj["bbox"][0]
             y1 = obj["bbox"][1]
             x2 = x1 + obj["bbox"][2]
