@@ -17,6 +17,7 @@ from yolox.sort_tracker.sort import Sort
 from yolox.deepsort_tracker.deepsort import DeepSort
 from yolox.motdt_tracker.motdt_tracker import OnlineTracker
 
+from copy import deepcopy
 import contextlib
 import io
 import os
@@ -108,7 +109,8 @@ class MOTEvaluator:
         ids = []
         data_list = []
         results = []
-        video_names = defaultdict()
+        # video_names = defaultdict()
+        video_names = []
         progress_bar = tqdm if is_main_process() else iter
 
         inference_time = 0
@@ -133,9 +135,10 @@ class MOTEvaluator:
             with torch.no_grad():
                 # init tracker
                 frame_id = info_imgs[2].item()
-                video_id = info_imgs[3].item()
-                img_file_name = info_imgs[4]
-                video_name = img_file_name[0].split('/')[0]
+                video_id = int(info_imgs[3][0])
+                img_file_name = info_imgs[4][0]
+                video_name = video_id
+                
                 if video_name == 'MOT17-05-FRCNN' or video_name == 'MOT17-06-FRCNN':
                     self.args.track_buffer = 14
                 elif video_name == 'MOT17-13-FRCNN' or video_name == 'MOT17-14-FRCNN':
@@ -157,11 +160,12 @@ class MOTEvaluator:
                     self.args.track_thresh = ori_thresh
 
                 if video_name not in video_names:
-                    video_names[video_id] = video_name
+                    # video_names[video_id] = video_name
+                    video_names.append(video_name)
                 if frame_id == 1:
                     tracker = BYTETracker(self.args)
                     if len(results) != 0:
-                        result_filename = os.path.join(result_folder, '{}.txt'.format(video_names[video_id - 1]))
+                        result_filename = os.path.join(result_folder, '{}.txt'.format(video_names[-2]))
                         write_results(result_filename, results)
                         results = []
 
@@ -172,22 +176,24 @@ class MOTEvaluator:
                 if is_time_record:
                     start = time.time()
 
-                outputs = model(imgs)
+                outputs = model(info_imgs[-1][0])
                 if decoder is not None:
                     outputs = decoder(outputs, dtype=outputs.type())
 
-                outputs = postprocess(outputs, self.num_classes, self.confthre, self.nmsthre)
-            
+                # print(outputs)
+                # outputs = postprocess(outputs, self.num_classes, self.confthre, self.nmsthre)
+                # print(outputs)
                 if is_time_record:
                     infer_end = time_synchronized()
                     inference_time += infer_end - start
 
-            output_results = self.convert_to_coco_format(outputs, info_imgs, ids)
+            output_results = self.convert_to_coco_format(outputs.pred, info_imgs, ids)
             data_list.extend(output_results)
 
             # run tracking
-            if outputs[0] is not None:
-                online_targets = tracker.update(outputs[0], info_imgs, self.img_size)
+            if outputs.pred[0] is not None:
+                img_info = [info_imgs[0].item(), info_imgs[1].item()]
+                online_targets = tracker.update(outputs.pred[0][:, :5].cpu().numpy(), img_info, self.img_size)
                 online_tlwhs = []
                 online_ids = []
                 online_scores = []
@@ -207,7 +213,7 @@ class MOTEvaluator:
                 track_time += track_end - infer_end
             
             if cur_iter == len(self.dataloader) - 1:
-                result_filename = os.path.join(result_folder, '{}.txt'.format(video_names[video_id]))
+                result_filename = os.path.join(result_folder, '{}.txt'.format(video_names[-1]))
                 write_results(result_filename, results)
 
         statistics = torch.cuda.FloatTensor([inference_time, track_time, n_samples])
@@ -311,7 +317,8 @@ class MOTEvaluator:
             data_list.extend(output_results)
 
             # run tracking
-            online_targets = tracker.update(outputs[0], info_imgs, self.img_size)
+            img_size = [info_imgs[0].item(), info_imgs[1].item()]
+            online_targets = tracker.update(outputs[0], img_size, self.img_size)
             online_tlwhs = []
             online_ids = []
             for t in online_targets:
@@ -597,8 +604,7 @@ class MOTEvaluator:
             if output is None:
                 continue
             output = output.cpu()
-
-            bboxes = output[:, 0:4]
+            bboxes = deepcopy(output[:, 0:4]) 
 
             # preprocessing: resize
             scale = min(
@@ -607,13 +613,13 @@ class MOTEvaluator:
             bboxes /= scale
             bboxes = xyxy2xywh(bboxes)
 
-            cls = output[:, 6]
-            scores = output[:, 4] * output[:, 5]
+            cls = output[:, 5]
+            scores = output[:, 4]# * output[:, 5]
             for ind in range(bboxes.shape[0]):
                 label = self.dataloader.dataset.class_ids[int(cls[ind])]
                 pred_data = {
                     "image_id": int(img_id),
-                    "category_id": label,
+                    "category_id": int(cls[ind]),#label,
                     "bbox": bboxes[ind].numpy().tolist(),
                     "score": scores[ind].numpy().item(),
                     "segmentation": [],
