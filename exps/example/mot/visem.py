@@ -4,8 +4,8 @@ import torch
 import torch.nn as nn
 import torch.distributed as dist
 
-from yolox.exp import Exp as MyExp
-from yolox.data import get_yolox_datadir
+from ByteTrack.yolox.exp import Exp as MyExp
+from ByteTrack.yolox.data import get_yolox_datadir
 
 class Exp(MyExp):
     def __init__(self):
@@ -92,7 +92,7 @@ class Exp(MyExp):
         return train_loader
 
     def get_eval_loader(self, batch_size, is_distributed, testdev=False):
-        from yolox.data import MOTDataset, ValTransform
+        from ByteTrack.yolox.data import MOTDataset, ValTransform
 
         valdataset = MOTDataset(
             data_dir="/content/drive/MyDrive/MediaEval2022_Medico/VISEM_Tracking_Train_v4/",
