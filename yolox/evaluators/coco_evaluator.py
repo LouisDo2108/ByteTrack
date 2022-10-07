@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 import torch
 
-from yolox.utils import (
+from ByteTrack.yolox.utils import (
     gather,
     is_main_process,
     postprocess,
